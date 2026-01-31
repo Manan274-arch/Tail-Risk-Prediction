@@ -59,16 +59,18 @@ def load_features():
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv(BASE_DIR / "processed_data.csv")
+    df_train = pd.read_csv(BASE_DIR / "tail_risk_train_data.csv")
+    df_live  = pd.read_csv(BASE_DIR / "tail_risk_live_data.csv")
 
-    if "Date" in df.columns:
-        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-        df = df.set_index("Date").sort_index()
-    else:
-        df.index = pd.date_range(start="1990-01-01", periods=len(df), freq="B")
-        df.index.name = "Date"
+    for df in [df_train, df_live]:
+        if "Date" in df.columns:
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            df.set_index("Date", inplace=True)
+        else:
+            df.index = pd.date_range(start="1990-01-01", periods=len(df), freq="B")
+            df.index.name = "Date"
 
-    return df
+    return df_train.sort_index(), df_live.sort_index()
 
 # ======================================================
 # Load everything
@@ -76,21 +78,17 @@ def load_data():
 model = load_model()
 scaler = load_scaler()
 features = load_features()
-df = load_data()
+df_train, df_live = load_data()
 
 # ======================================================
 # Validate inputs
 # ======================================================
-missing_features = [c for c in features if c not in df.columns]
+missing_features = [c for c in features if c not in df_train.columns]
 if missing_features:
     st.error(
         "Your CSV is missing feature columns required by `features.pkl`:\n\n"
         + ", ".join(missing_features[:25])
     )
-    st.stop()
-
-if "forward_return" not in df.columns:
-    st.error("`processed_data.csv` must contain a `forward_return` column.")
     st.stop()
 
 # ======================================================
@@ -100,9 +98,9 @@ st.sidebar.header("⚙️ Controls")
 
 selected_date = st.sidebar.date_input(
     "Evaluation date",
-    value=df.index[-1],
-    min_value=df.index.min(),
-    max_value=df.index.max()
+    value=df_live.index[-1],
+    min_value=df_live.index.min(),
+    max_value=df_live.index.max()
 )
 
 prob_threshold = st.sidebar.slider(
@@ -119,18 +117,28 @@ crash_dd = st.sidebar.slider(
 # ======================================================
 # Inference
 # ======================================================
-X_all = scaler.transform(df[features])
-df["prob"] = model.predict(X_all, verbose=0).ravel()
-df["is_crash"] = (df["forward_return"] <= -crash_dd).astype(int)
+X_train_all = scaler.transform(df_train[features])
+X_live_all  = scaler.transform(df_live[features])
 
+pred_train = model.predict(X_train_all, verbose=0)
+pred_live  = model.predict(X_live_all, verbose=0)
+
+df_train["prob"] = pred_train[:, -1] if pred_train.ndim == 2 else pred_train.ravel()
+df_live["prob"]  = pred_live[:, -1]  if pred_live.ndim == 2  else pred_live.ravel()
+
+df_train["is_crash"] = df_train["tail_event"].astype(int)
+
+# ======================================================
+# Selected date
+# ======================================================
 sel_ts = pd.to_datetime(selected_date)
-if sel_ts not in df.index:
-    sel_ts = df.index[df.index.get_indexer([sel_ts], method="pad")][0]
+if sel_ts not in df_live.index:
+    sel_ts = df_live.index[df_live.index.get_indexer([sel_ts], method="pad")][0]
 
-prob_today = float(df.loc[sel_ts, "prob"])
+prob_today = float(df_live.loc[sel_ts, "prob"])
 
-crash_probs = df.loc[df["is_crash"] == 1, "prob"]
-noncrash_probs = df.loc[df["is_crash"] == 0, "prob"]
+crash_probs = df_train.loc[df_train["is_crash"] == 1, "prob"]
+noncrash_probs = df_train.loc[df_train["is_crash"] == 0, "prob"]
 
 avg_crash = crash_probs.mean()
 avg_noncrash = noncrash_probs.mean()
@@ -238,7 +246,7 @@ with tab3:
     bins = [0.0, 0.2, 0.4, 0.6, 1.0]
     labels = ["0–0.2", "0.2–0.4", "0.4–0.6", "0.6+"]
 
-    df["risk_bucket"] = pd.cut(df["prob"], bins=bins, labels=labels)
+    df_train["risk_bucket"] = pd.cut(df_train["prob"], bins=bins, labels=labels)
 
     def max_drawdown(r):
         r = r.dropna()
@@ -249,7 +257,7 @@ with tab3:
         return float(((c - p) / p).min())
 
     bucket_dd = (
-        df.groupby("risk_bucket")["forward_return"]
+        df_train.groupby("risk_bucket")["forward_return"]
         .apply(max_drawdown)
         .reindex(labels)
     )
