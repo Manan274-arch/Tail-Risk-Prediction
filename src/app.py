@@ -277,7 +277,7 @@ with tab3:
     ax.set_ylim(0, bucket_crash_rate.max() * 1.3)
     ax.grid(axis="y", alpha=0.2)
 
-    st.pyplot(fig)
+    st.pyplot(fig, use_container_width=False)
 
     with st.expander("Show bucket values (table)"):
         st.dataframe(bucket_crash_rate.rename("crash_rate"))
