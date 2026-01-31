@@ -329,7 +329,7 @@ with tab4:
         - **Distribution separation** checks discriminative ability.
         - **Average risk by outcome** provides a basic sanity check.
         - **Drawdown by risk bucket** tests economic relevance, not just statistical fit.
-        - **Live market data are retrieved dynamically from Yahoo Finance (SPY) and cached for 24 hours to ensure stability and reproducibility.
+        - **Live market data** are retrieved dynamically from Yahoo Finance (SPY) and cached for 24 hours to ensure stability and reproducibility.
         """
     )
 
