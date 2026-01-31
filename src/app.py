@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 # ======================================================
-# Base directory (CRITICAL for deployment)
+# Base directory (deployment-safe)
 # ======================================================
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -15,12 +15,12 @@ BASE_DIR = Path(__file__).resolve().parent
 # Global plot compactness (dashboard friendly)
 # ======================================================
 plt.rcParams.update({
-    "figure.dpi": 100,
-    "axes.titlesize": 10,
-    "axes.labelsize": 9,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "legend.fontsize": 8,
+    "figure.dpi": 90,
+    "axes.titlesize": 9,
+    "axes.labelsize": 8,
+    "xtick.labelsize": 7,
+    "ytick.labelsize": 7,
+    "legend.fontsize": 7,
 })
 
 # ======================================================
@@ -43,7 +43,7 @@ st.markdown(
 st.markdown("---")
 
 # ======================================================
-# Load assets (PATH SAFE)
+# Load assets
 # ======================================================
 @st.cache_resource
 def load_model():
@@ -79,22 +79,18 @@ features = load_features()
 df = load_data()
 
 # ======================================================
-# Validate required columns
+# Validate inputs
 # ======================================================
 missing_features = [c for c in features if c not in df.columns]
 if missing_features:
     st.error(
-        "Your CSV is missing feature columns required by features.pkl:\n\n"
-        + ", ".join(missing_features[:30])
-        + (" ..." if len(missing_features) > 30 else "")
+        "Your CSV is missing feature columns required by `features.pkl`:\n\n"
+        + ", ".join(missing_features[:25])
     )
     st.stop()
 
 if "forward_return" not in df.columns:
-    st.error(
-        "`processed_data.csv` must contain a `forward_return` column "
-        "for crash labeling and drawdown plots."
-    )
+    st.error("`processed_data.csv` must contain a `forward_return` column.")
     st.stop()
 
 # ======================================================
@@ -117,7 +113,7 @@ prob_threshold = st.sidebar.slider(
 crash_dd = st.sidebar.slider(
     "Crash definition (drawdown)",
     0.02, 0.20, 0.05, 0.01,
-    help="Crash day is defined as forward_return <= -drawdown"
+    help="Crash day is defined as forward_return ≤ −drawdown"
 )
 
 # ======================================================
@@ -127,7 +123,6 @@ X_all = scaler.transform(df[features])
 df["prob"] = model.predict(X_all, verbose=0).ravel()
 df["is_crash"] = (df["forward_return"] <= -crash_dd).astype(int)
 
-# Selected date handling
 sel_ts = pd.to_datetime(selected_date)
 if sel_ts not in df.index:
     sel_ts = df.index[df.index.get_indexer([sel_ts], method="pad")][0]
@@ -137,8 +132,8 @@ prob_today = float(df.loc[sel_ts, "prob"])
 crash_probs = df.loc[df["is_crash"] == 1, "prob"]
 noncrash_probs = df.loc[df["is_crash"] == 0, "prob"]
 
-avg_crash = float(crash_probs.mean()) if len(crash_probs) else float("nan")
-avg_noncrash = float(noncrash_probs.mean()) if len(noncrash_probs) else float("nan")
+avg_crash = crash_probs.mean()
+avg_noncrash = noncrash_probs.mean()
 
 # ======================================================
 # Tabs
@@ -147,13 +142,15 @@ tab1, tab2, tab3, tab4 = st.tabs(
     ["📍 Today’s Risk", "📊 Model Behaviour", "📉 Economic Impact", "ℹ️ Methodology"]
 )
 
-# ===================== TAB 1 ==========================
+# ======================================================
+# TAB 1 — Today’s Risk
+# ======================================================
 with tab1:
     colA, colB, colC = st.columns([1, 2, 1])
 
     elevated = prob_today >= prob_threshold
-    risk_label = "ELEVATED RISK" if elevated else "LOW RISK"
     color = "red" if elevated else "green"
+    label = "ELEVATED RISK" if elevated else "LOW RISK"
 
     colB.markdown(
         f"""
@@ -162,7 +159,7 @@ with tab1:
             {prob_today:.2%}
         </h1>
         <p style='text-align:center; color:{color}; font-weight:bold; margin-top:-10px;'>
-            {risk_label}
+            {label}
         </p>
         """,
         unsafe_allow_html=True
@@ -171,33 +168,73 @@ with tab1:
     st.markdown(
         f"""
         **Interpretation**  
-        This is the model-estimated probability of a **large downside event**.
+        This number represents the model-estimated probability of a **large downside event**
+        occurring within the forecast horizon used during training.
 
-        - Crash definition: **forward_return ≤ −{crash_dd:.0%}**
-        - Signal threshold: **{prob_threshold:.0%}**
+        - Crash definition for diagnostics: **forward-return over the next 10 days ≤ −{crash_dd:.0%}**
+        - Probability threshold (signal line): **{prob_threshold:.0%}**
         """
     )
 
-# ===================== TAB 2 ==========================
+    with st.expander("What should I do with this probability?"):
+        st.markdown(
+            """
+            - Treat this as an **early warning indicator**, not a deterministic forecast.
+            - Elevated values suggest **heightened vulnerability**, not certainty.
+            - Typical actions include reducing leverage, tightening stops, or adding hedges.
+            """
+        )
+
+# ======================================================
+# TAB 2 — Model Behaviour
+# ======================================================
 with tab2:
+    st.markdown(
+        """
+        These diagnostics test whether the model assigns **systematically higher probabilities**
+        on crash days relative to non-crash days.
+        """
+    )
+
     left, right = st.columns(2)
 
-    fig1, ax1 = plt.subplots(figsize=(4.0, 3.0))
-    ax1.hist(crash_probs, bins=25, alpha=0.6, density=True, label="Crash days", color="red")
-    ax1.hist(noncrash_probs, bins=25, alpha=0.6, density=True, label="Non-crash days", color="green")
-    ax1.axvline(prob_threshold, color="black", linestyle="--", linewidth=1)
-    ax1.set_title("Crash vs Non-Crash Distribution")
-    ax1.legend()
-    st.pyplot(fig1)
+    with left:
+        fig1, ax1 = plt.subplots(figsize=(3.6, 2.6))
+        ax1.hist(crash_probs, bins=20, density=True, alpha=0.6, label="Crash days", color="red")
+        ax1.hist(noncrash_probs, bins=20, density=True, alpha=0.6, label="Non-crash days", color="green")
+        ax1.axvline(prob_threshold, linestyle="--", color="black", linewidth=1)
+        ax1.set_title("Crash vs Non-Crash Distribution")
+        ax1.set_xlabel("Predicted Probability")
+        ax1.legend()
+        ax1.grid(alpha=0.2)
+        st.pyplot(fig1)
 
-    fig2, ax2 = plt.subplots(figsize=(4.0, 3.0))
-    ax2.bar(["Crash days", "Non-crash days"], [avg_crash, avg_noncrash], color=["red", "green"])
-    ax2.set_ylim(0, 1)
-    ax2.set_title("Average Model Risk by Outcome")
-    st.pyplot(fig2)
+    with right:
+        fig2, ax2 = plt.subplots(figsize=(3.6, 2.6))
+        ax2.bar(["Crash", "Non-crash"], [avg_crash, avg_noncrash], color=["red", "green"])
+        ax2.set_ylim(0, 1)
+        ax2.set_title("Average Predicted Risk")
+        ax2.grid(axis="y", alpha=0.2)
+        st.pyplot(fig2)
 
-# ===================== TAB 3 ==========================
+    st.markdown(
+        f"""
+        **Quick read:**  
+        - Mean probability on crash days: **{avg_crash:.3f}**  
+        - Mean probability on non-crash days: **{avg_noncrash:.3f}**
+        """
+    )
+
+# ======================================================
+# TAB 3 — Economic Impact
+# ======================================================
 with tab3:
+    st.markdown(
+        """
+        This plot examines whether **higher predicted risk** corresponds to **more severe realized downside**.
+        """
+    )
+
     bins = [0.0, 0.2, 0.4, 0.6, 1.0]
     labels = ["0–0.2", "0.2–0.4", "0.4–0.6", "0.6+"]
 
@@ -211,25 +248,42 @@ with tab3:
         p = c.cummax()
         return float(((c - p) / p).min())
 
-    bucket_dd = df.groupby("risk_bucket")["forward_return"].apply(max_drawdown)
+    bucket_dd = (
+        df.groupby("risk_bucket")["forward_return"]
+        .apply(max_drawdown)
+        .reindex(labels)
+    )
 
-    fig3, ax3 = plt.subplots(figsize=(5.0, 3.0))
+    fig3, ax3 = plt.subplots(figsize=(3.6, 3))
     bucket_dd.plot(kind="bar", ax=ax3, color="firebrick")
-    ax3.set_title("Maximum Drawdown by Predicted Risk Bucket")
-    st.pyplot(fig3)
+    ax3.set_title("Max Drawdown by Risk Bucket")
+    ax3.set_ylabel("Maximum Drawdown")
+    ax3.axhline(0, color="black", linewidth=1)
+    ax3.grid(axis="y", alpha=0.2)
+    st.pyplot(fig3, use_container_width=False)
 
-# ===================== TAB 4 ==========================
+    with st.expander("Show bucket values (table)"):
+        st.dataframe(bucket_dd.rename("max_drawdown"))
+
+# ======================================================
+# TAB 4 — Methodology
+# ======================================================
 with tab4:
     st.markdown(
         f"""
         ### What this system estimates
-        - A **probability** of a large downside event, not a price forecast.
+        - The model outputs a **probability**, not a price forecast.
+        - This probability represents the likelihood of a **tail event**
+          within the horizon used during training.
 
-        ### Crash definition
-        - **forward_return ≤ −{crash_dd:.0%}**
+        ### How “crash” is defined here
+        - A crash corresponds to:
+          **forward-return over the next 10 days ≤ −{crash_dd:.0%}** over the forward window.
 
-        ### Why diagnostics matter
-        - Distribution separation
-        - Economic validity via drawdowns
+        ### Why these diagnostics matter
+        - **Distribution separation** checks discriminative ability.
+        - **Average risk by outcome** provides a basic sanity check.
+        - **Drawdown by risk bucket** tests economic relevance, not just statistical fit.
         """
     )
+
