@@ -105,7 +105,7 @@ selected_date = st.sidebar.date_input(
 
 prob_threshold = st.sidebar.slider(
     "Probability threshold",
-    0.05, 0.50, 0.25, 0.05
+    0.05, 0.50, 0.20, 0.05
 )
 
 crash_dd = st.sidebar.slider(
