@@ -236,42 +236,54 @@ with tab2:
 # ======================================================
 # TAB 3 — Economic Impact
 # ======================================================
+# ======================================================
+# TAB 3 — Economic Impact
+# ======================================================
 with tab3:
     st.markdown(
         """
-        This plot examines whether **higher predicted risk** corresponds to **more severe realized downside**.
+        This plot examines whether **higher predicted risk** corresponds to a **higher realized
+        frequency of tail events**, which is the core probabilistic validity check.
         """
     )
 
+    # Risk buckets
     bins = [0.0, 0.2, 0.4, 0.6, 1.0]
     labels = ["0–0.2", "0.2–0.4", "0.4–0.6", "0.6+"]
 
-    df_train["risk_bucket"] = pd.cut(df_train["prob"], bins=bins, labels=labels)
+    df_train["risk_bucket"] = pd.cut(
+        df_train["prob"],
+        bins=bins,
+        labels=labels,
+        include_lowest=True
+    )
 
-    def max_drawdown(r):
-        r = r.dropna()
-        if len(r) == 0:
-            return np.nan
-        c = (1 + r).cumprod()
-        p = c.cummax()
-        return float(((c - p) / p).min())
-
-    bucket_dd = (
-        df_train.groupby("risk_bucket")["forward_return"]
-        .apply(max_drawdown)
+    # Actual crash rate per bucket
+    bucket_crash_rate = (
+        df_train
+        .groupby("risk_bucket")["is_crash"]
+        .mean()
         .reindex(labels)
     )
 
-    fig3, ax3 = plt.subplots(figsize=(3.6, 3))
-    bucket_dd.plot(kind="bar", ax=ax3, color="firebrick")
-    ax3.set_title("Max Drawdown by Risk Bucket")
-    ax3.set_ylabel("Maximum Drawdown")
-    ax3.axhline(0, color="black", linewidth=1)
-    ax3.grid(axis="y", alpha=0.2)
-    st.pyplot(fig3, use_container_width=False)
+    # Plot
+    fig, ax = plt.subplots(figsize=(3.8, 3))
+    bucket_crash_rate.plot(
+        kind="bar",
+        ax=ax,
+        color="firebrick"
+    )
+
+    ax.set_title("Actual Crash Rate by Predicted Risk Level")
+    ax.set_xlabel("Predicted Risk Bucket")
+    ax.set_ylabel("Actual Crash Frequency")
+    ax.set_ylim(0, bucket_crash_rate.max() * 1.3)
+    ax.grid(axis="y", alpha=0.2)
+
+    st.pyplot(fig)
 
     with st.expander("Show bucket values (table)"):
-        st.dataframe(bucket_dd.rename("max_drawdown"))
+        st.dataframe(bucket_crash_rate.rename("crash_rate"))
 
 # ======================================================
 # TAB 4 — Methodology
