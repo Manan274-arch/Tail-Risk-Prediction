@@ -4,6 +4,7 @@ import numpy as np
 import joblib
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import yfinance as yf
 from pathlib import Path
 
 # ======================================================
@@ -57,20 +58,43 @@ def load_scaler():
 def load_features():
     return joblib.load(BASE_DIR / "features.pkl")
 
+# ======================================================
+# Load training data (UNCHANGED: CSV-based)
+# ======================================================
 @st.cache_data
-def load_data():
-    df_train = pd.read_csv(BASE_DIR / "tail_risk_train_data.csv")
-    df_live  = pd.read_csv(BASE_DIR / "tail_risk_live_data.csv")
+def load_train_data():
+    df = pd.read_csv(BASE_DIR / "tail_risk_train_data.csv")
 
-    for df in [df_train, df_live]:
-        if "Date" in df.columns:
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-            df.set_index("Date", inplace=True)
-        else:
-            df.index = pd.date_range(start="1990-01-01", periods=len(df), freq="B")
-            df.index.name = "Date"
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df.set_index("Date", inplace=True)
+    else:
+        df.index = pd.date_range(start="1990-01-01", periods=len(df), freq="B")
+        df.index.name = "Date"
 
-    return df_train.sort_index(), df_live.sort_index()
+    return df.sort_index()
+
+# ======================================================
+# Load live data (UPDATED: yfinance SPY)
+# ======================================================
+@st.cache_data(ttl=86400)
+def load_live_data():
+    df = yf.download(
+        "SPY",
+        start="1990-01-01",
+        auto_adjust=True,
+        progress=False
+    )
+
+    # Feature engineering MUST match training exactly
+    df["ret_1d"] = df["Close"].pct_change()
+    df["ret_5d"] = df["Close"].pct_change(5)
+    df["vol_20d"] = df["ret_1d"].rolling(20).std()
+
+    df = df.dropna()
+    df.index.name = "Date"
+
+    return df.sort_index()
 
 # ======================================================
 # Load everything
@@ -78,12 +102,14 @@ def load_data():
 model = load_model()
 scaler = load_scaler()
 features = load_features()
-df_train, df_live = load_data()
+
+df_train = load_train_data()
+df_live = load_live_data()
 
 # ======================================================
-# Validate inputs
+# Validate inputs (FIXED: validate against live data)
 # ======================================================
-missing_features = [c for c in features if c not in df_train.columns]
+missing_features = [c for c in features if c not in df_live.columns]
 if missing_features:
     st.error(
         "Your CSV is missing feature columns required by `features.pkl`:\n\n"
@@ -118,13 +144,13 @@ crash_dd = st.sidebar.slider(
 # Inference
 # ======================================================
 X_train_all = scaler.transform(df_train[features])
-X_live_all  = scaler.transform(df_live[features])
+X_live_all = scaler.transform(df_live[features])
 
 pred_train = model.predict(X_train_all, verbose=0)
-pred_live  = model.predict(X_live_all, verbose=0)
+pred_live = model.predict(X_live_all, verbose=0)
 
 df_train["prob"] = pred_train[:, -1] if pred_train.ndim == 2 else pred_train.ravel()
-df_live["prob"]  = pred_live[:, -1]  if pred_live.ndim == 2  else pred_live.ravel()
+df_live["prob"] = pred_live[:, -1] if pred_live.ndim == 2 else pred_live.ravel()
 
 df_train["is_crash"] = df_train["tail_event"].astype(int)
 
@@ -244,7 +270,6 @@ with tab3:
         """
     )
 
-    # Risk buckets
     bins = [0.0, 0.2, 0.4, 0.6, 1.0]
     labels = ["0–0.2", "0.2–0.4", "0.4–0.6", "0.6+"]
 
@@ -255,7 +280,6 @@ with tab3:
         include_lowest=True
     )
 
-    # Actual crash rate per bucket
     bucket_crash_rate = (
         df_train
         .groupby("risk_bucket")["is_crash"]
@@ -263,13 +287,8 @@ with tab3:
         .reindex(labels)
     )
 
-    # Plot
     fig, ax = plt.subplots(figsize=(3.6, 2.6))
-    bucket_crash_rate.plot(
-        kind="bar",
-        ax=ax,
-        color="firebrick"
-    )
+    bucket_crash_rate.plot(kind="bar", ax=ax, color="firebrick")
 
     ax.set_title("Actual Crash Rate by Predicted Risk Level")
     ax.set_xlabel("Predicted Risk Bucket")
@@ -301,6 +320,7 @@ with tab4:
         - **Distribution separation** checks discriminative ability.
         - **Average risk by outcome** provides a basic sanity check.
         - **Drawdown by risk bucket** tests economic relevance, not just statistical fit.
+        - **Live market data are retrieved dynamically from Yahoo Finance (SPY) and cached for 24 hours to ensure stability and reproducibility.
         """
     )
 
