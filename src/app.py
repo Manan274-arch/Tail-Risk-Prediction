@@ -236,9 +236,6 @@ with tab2:
 # ======================================================
 # TAB 3 — Economic Impact
 # ======================================================
-# ======================================================
-# TAB 3 — Economic Impact
-# ======================================================
 with tab3:
     st.markdown(
         """
@@ -267,7 +264,7 @@ with tab3:
     )
 
     # Plot
-    fig, ax = plt.subplots(figsize=(3.8, 3))
+    fig, ax = plt.subplots(figsize=(3.6, 2.6))
     bucket_crash_rate.plot(
         kind="bar",
         ax=ax,
