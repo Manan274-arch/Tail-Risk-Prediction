@@ -111,7 +111,7 @@ prob_threshold = st.sidebar.slider(
 crash_dd = st.sidebar.slider(
     "Crash definition (drawdown)",
     0.02, 0.20, 0.05, 0.01,
-    help="Crash day is defined as forward_return ≤ −drawdown"
+    help="Crash day is defined as forward-return ≤ −drawdown"
 )
 
 # ======================================================
