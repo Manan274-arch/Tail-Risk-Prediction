@@ -184,12 +184,16 @@ cython_debug/
 # ML / Data Science specific
 # ===============================
 
-# datasets
+# datasets (ignored everywhere EXCEPT src/)
 data/
 *.csv
+!src/*.csv
 
-# model artifacts
+# model artifacts (ignored everywhere EXCEPT src/)
 artifacts/
 *.pkl
 *.keras
 *.h5
+!src/*.pkl
+!src/*.keras
+!src/*.h5
