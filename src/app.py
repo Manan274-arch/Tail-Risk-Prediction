@@ -4,7 +4,6 @@ import numpy as np
 import joblib
 import tensorflow as tf
 import matplotlib.pyplot as plt
-import yfinance as yf
 from pathlib import Path
 
 # ======================================================
@@ -59,42 +58,54 @@ def load_features():
     return joblib.load(BASE_DIR / "features.pkl")
 
 # ======================================================
-# Load training data (UNCHANGED: CSV-based)
+# Load data + feature engineering
 # ======================================================
 @st.cache_data
-def load_train_data():
-    df = pd.read_csv(BASE_DIR / "tail_risk_train_data.csv")
+def load_data():
+    df_train = pd.read_csv(BASE_DIR / "tail_risk_train_data.csv")
+    df_live  = pd.read_csv(BASE_DIR / "tail_risk_live_data.csv")
 
-    if "Date" in df.columns:
-        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-        df.set_index("Date", inplace=True)
-    else:
-        df.index = pd.date_range(start="1990-01-01", periods=len(df), freq="B")
-        df.index.name = "Date"
+    for df in [df_train, df_live]:
+        if "Date" in df.columns:
+            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            df.set_index("Date", inplace=True)
+        else:
+            df.index = pd.date_range(start="1990-01-01", periods=len(df), freq="B")
+            df.index.name = "Date"
 
-    return df.sort_index()
+    # --------------------------------------------------
+    # FEATURE ENGINEERING (only if missing)
+    # --------------------------------------------------
+    for df in [df_train, df_live]:
 
-# ======================================================
-# Load live data (UPDATED: yfinance SPY)
-# ======================================================
-@st.cache_data(ttl=86400)
-def load_live_data():
-    df = yf.download(
-        "SPY",
-        start="1990-01-01",
-        auto_adjust=True,
-        progress=False
-    )
+        if "log_return_1d" not in df.columns:
+            df["log_return_1d"] = np.log(df["Close"]).diff()
 
-    # Feature engineering MUST match training exactly
-    df["ret_1d"] = df["Close"].pct_change()
-    df["ret_5d"] = df["Close"].pct_change(5)
-    df["vol_20d"] = df["ret_1d"].rolling(20).std()
+        if "vol_10" not in df.columns:
+            df["vol_10"] = df["log_return_1d"].rolling(10).std()
 
-    df = df.dropna()
-    df.index.name = "Date"
+        if "vol_20" not in df.columns:
+            df["vol_20"] = df["log_return_1d"].rolling(20).std()
 
-    return df.sort_index()
+        if "vol_60" not in df.columns:
+            df["vol_60"] = df["log_return_1d"].rolling(60).std()
+
+        if "drawdown_20" not in df.columns:
+            df["drawdown_20"] = df["Close"] / df["Close"].rolling(20).max() - 1.0
+
+        if "mom_10" not in df.columns:
+            df["mom_10"] = df["Close"].pct_change(10)
+
+        if "mom_50" not in df.columns:
+            df["mom_50"] = df["Close"].pct_change(50)
+
+        if "volume_ratio_20" not in df.columns and "Volume" in df.columns:
+            df["volume_ratio_20"] = df["Volume"] / df["Volume"].rolling(20).mean()
+
+    df_train = df_train.dropna().sort_index()
+    df_live  = df_live.dropna().sort_index()
+
+    return df_train, df_live
 
 # ======================================================
 # Load everything
@@ -102,12 +113,10 @@ def load_live_data():
 model = load_model()
 scaler = load_scaler()
 features = load_features()
-
-df_train = load_train_data()
-df_live = load_live_data()
+df_train, df_live = load_data()
 
 # ======================================================
-# Validate inputs (FIXED: validate against live data)
+# Validate inputs
 # ======================================================
 missing_features = [c for c in features if c not in df_live.columns]
 if missing_features:
@@ -144,13 +153,13 @@ crash_dd = st.sidebar.slider(
 # Inference
 # ======================================================
 X_train_all = scaler.transform(df_train[features])
-X_live_all = scaler.transform(df_live[features])
+X_live_all  = scaler.transform(df_live[features])
 
 pred_train = model.predict(X_train_all, verbose=0)
-pred_live = model.predict(X_live_all, verbose=0)
+pred_live  = model.predict(X_live_all, verbose=0)
 
 df_train["prob"] = pred_train[:, -1] if pred_train.ndim == 2 else pred_train.ravel()
-df_live["prob"] = pred_live[:, -1] if pred_live.ndim == 2 else pred_live.ravel()
+df_live["prob"]  = pred_live[:, -1]  if pred_live.ndim == 2  else pred_live.ravel()
 
 df_train["is_crash"] = df_train["tail_event"].astype(int)
 
