@@ -179,3 +179,17 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# ===============================
+# ML / Data Science specific
+# ===============================
+
+# datasets
+data/
+*.csv
+
+# model artifacts
+artifacts/
+*.pkl
+*.keras
+*.h5
