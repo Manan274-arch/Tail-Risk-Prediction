@@ -350,7 +350,7 @@ with tab4:
 
         ### How “crash” is defined here
         - A crash corresponds to:
-          **forward-return over the next 10 days ≤ −{crash_dd:.0%}** over the forward window.
+          **forward-return over the next 10 days ≤ -5%** over the forward window.
         - The crash definition is kept fixed to ensure consistency of historical diagnostics and comparability across time.
 
 
