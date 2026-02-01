@@ -174,10 +174,11 @@ tab1, tab2, tab3, tab4 = st.tabs(
 )
 
 # ======================================================
-# TAB 1 — Today’s Risk (CLEAN + FIXED)
+# TAB 1 — Today’s Risk (FINAL FIX)
 # ======================================================
 with tab1:
-    _, colB, _ = st.columns([1, 2, 1])
+    # Use full-width column so centering is page-true
+    col = st.container()
 
     # --- Color semantics ---
     if prob_today >= prob_threshold:
@@ -190,61 +191,63 @@ with tab1:
         color = "#2E7D32"
         label = "LOW RISK"
 
-    # --- Header ---
-    colB.markdown(
-        f"<h3 style='text-align:center; margin:0;'>Tail Risk on {sel_ts.date()}</h3>",
-        unsafe_allow_html=True
-    )
-
-    # --- Big number ---
-    colB.markdown(
+    # --- Header (centered to PAGE, not column padding) ---
+    col.markdown(
         f"""
-        <h1 style="
-            text-align:center;
-            color:{color};
-            margin-top:16px;
-            margin-bottom:0px;
-            font-weight:600;
-            line-height:1.05;
-        ">
-            {prob_today:.2%}
-        </h1>
+        <div style="width:100%; text-align:center;">
+            <h3 style="margin:0;">
+                Tail Risk on {sel_ts.date()}
+            </h3>
+        </div>
         """,
         unsafe_allow_html=True
     )
 
-    # --- Risk label ---
-    colB.markdown(
+    # --- One shared centered stack for the bottom three ---
+    col.markdown(
         f"""
-        <p style="
-        text-align:center;
-        color:{color};
-        font-weight:600;
-        font-size:0.9rem;
-        margin-top:12px;
-    ">
-        {label}
-    </p>
-    """,
-    unsafe_allow_html=True
-    )
-
-    # --- Percentile line ---
-    colB.markdown(
-        f"""
-        <p style="
+        <div style="
+            width:100%;
             text-align:center;
-            font-size:13px;
-            color:#AAAAAA;
-            margin-top:10px;
+            margin-top:18px;
         ">
-            Higher than <b>{percentile:.0f}%</b> of historical observations
-        </p>
+            <div style="
+                display:inline-block;
+                text-align:center;
+            ">
+
+                <div style="
+                    color:{color};
+                    font-size:56px;
+                    font-weight:600;
+                    line-height:1.05;
+                ">
+                    {prob_today:.2%}
+                </div>
+
+                <div style="
+                    color:{color};
+                    font-weight:600;
+                    margin-top:14px;
+                ">
+                    {label}
+                </div>
+
+                <div style="
+                    font-size:13px;
+                    color:#AAAAAA;
+                    margin-top:14px;
+                ">
+                    Higher than <b>{percentile:.0f}%</b> of historical observations
+                </div>
+
+            </div>
+        </div>
         """,
         unsafe_allow_html=True
     )
 
-    # --- Interpretation ---
+    # --- Interpretation (unchanged) ---
     st.markdown(
         f"""
         **Interpretation**  
@@ -264,7 +267,6 @@ with tab1:
             - Typical actions include reducing leverage, tightening stops, or adding hedges.
             """
         )
-
 
 crash_probs = df_train.loc[df_train["is_crash"] == 1, "prob"]
 noncrash_probs = df_train.loc[df_train["is_crash"] == 0, "prob"]
