@@ -74,35 +74,24 @@ def load_data():
             df.index.name = "Date"
 
     for df in [df_train, df_live]:
-
         if "log_return_1d" not in df.columns:
             df["log_return_1d"] = np.log(df["Close"]).diff()
-
         if "vol_10" not in df.columns:
             df["vol_10"] = df["log_return_1d"].rolling(10).std()
-
         if "vol_20" not in df.columns:
             df["vol_20"] = df["log_return_1d"].rolling(20).std()
-
         if "vol_60" not in df.columns:
             df["vol_60"] = df["log_return_1d"].rolling(60).std()
-
         if "drawdown_20" not in df.columns:
             df["drawdown_20"] = df["Close"] / df["Close"].rolling(20).max() - 1.0
-
         if "mom_10" not in df.columns:
             df["mom_10"] = df["Close"].pct_change(10)
-
         if "mom_50" not in df.columns:
             df["mom_50"] = df["Close"].pct_change(50)
-
         if "volume_ratio_20" not in df.columns and "Volume" in df.columns:
             df["volume_ratio_20"] = df["Volume"] / df["Volume"].rolling(20).mean()
 
-    df_train = df_train.dropna().sort_index()
-    df_live  = df_live.dropna().sort_index()
-
-    return df_train, df_live
+    return df_train.dropna().sort_index(), df_live.dropna().sort_index()
 
 # ======================================================
 # Load everything
@@ -124,9 +113,9 @@ if missing_features:
     st.stop()
 
 # ======================================================
-# Sidebar controls
+# Sidebar — HUMAN READABLE
 # ======================================================
-st.sidebar.header("⚙️ Risk Settings")
+st.sidebar.header("🧭 Risk Settings")
 
 selected_date = st.sidebar.date_input(
     "Evaluation date",
@@ -136,16 +125,22 @@ selected_date = st.sidebar.date_input(
 )
 
 crash_dd = st.sidebar.slider(
-    "What counts as a crash?",
+    "What do we consider a crash?",
     0.02, 0.20, 0.05, 0.01,
-    help="Crash day is defined as forward-return ≤ −drawdown"
+    help="A crash means the market falls by this percentage or more within the next 10 trading days"
+)
+st.sidebar.caption(
+    f"This defines a crash as a drop of {crash_dd:.0%} or more over the next 10 trading days."
 )
 
 prob_threshold = st.sidebar.slider(
-    "Risk alert level",
-    0.05, 0.50, 0.20, 0.05
+    "When should I be alerted?",
+    0.05, 0.50, 0.20, 0.05,
+    help="Alert me when the model estimates crash risk above this probability"
 )
-
+st.sidebar.caption(
+    f"You will see an alert when estimated crash risk exceeds {prob_threshold:.0%}."
+)
 
 # ======================================================
 # Inference
@@ -169,12 +164,7 @@ if sel_ts not in df_live.index:
     sel_ts = df_live.index[df_live.index.get_indexer([sel_ts], method="pad")][0]
 
 prob_today = float(df_live.loc[sel_ts, "prob"])
-
-crash_probs = df_train.loc[df_train["is_crash"] == 1, "prob"]
-noncrash_probs = df_train.loc[df_train["is_crash"] == 0, "prob"]
-
-avg_crash = crash_probs.mean()
-avg_noncrash = noncrash_probs.mean()
+percentile = (df_train["prob"] < prob_today).mean() * 100
 
 # ======================================================
 # Tabs
@@ -184,43 +174,43 @@ tab1, tab2, tab3, tab4 = st.tabs(
 )
 
 # ======================================================
-# TAB 1 — Today’s Risk
+# TAB 1 — Today’s Risk (FIXED CENTERING)
 # ======================================================
 with tab1:
-    colA, colB, colC = st.columns([1, 2, 1])
+    _, colB, _ = st.columns([1, 2, 1])
 
     if prob_today >= prob_threshold:
-        color = "#C62828"   # deep red
+        color = "#C62828"
         label = "HEIGHTENED RISK"
     elif prob_today >= 0.75 * prob_threshold:
-        color = "#F9A825"   # amber
+        color = "#F9A825"
         label = "CAUTION"
     else:
-        color = "#2E7D32"   # muted green
+        color = "#2E7D32"
         label = "LOW RISK"
 
     colB.markdown(
         f"""
         <h3 style='text-align:center;'>Tail Risk on {sel_ts.date()}</h3>
-        <h1 style='text-align:center; color:{color}; margin-top:-8px;'>
-            {prob_today:.2%}
-        </h1>
-        <p style='text-align:center; color:{color}; font-weight:bold; margin-top:-10px;'>
-            {label}
+
+        <div style="display:flex; justify-content:center; align-items:center;">
+            <div>
+                <h1 style="text-align:center; color:{color}; margin:0; font-weight:600;">
+                    {prob_today:.2%}
+                </h1>
+                <p style="text-align:center; color:{color}; font-weight:bold; margin-top:4px;">
+                    {label}
+                </p>
+            </div>
+        </div>
+
+        <p title="Percentile of the model's predicted probabilities across the historical training sample"
+           style="text-align:center; font-size:13px; color:#AAAAAA; margin-top:6px;">
+           Higher than <b>{percentile:.0f}%</b> of historical observations
         </p>
         """,
         unsafe_allow_html=True
     )
-
-    percentile = (df_train["prob"] < prob_today).mean() * 100
-    colB.markdown(
-    f"""
-    <p style='text-align:center; font-size:13px; color:#AAAAAA; margin-top:-6px;'>
-        Higher than <b>{percentile:.0f}%</b> of historical observations
-    </p>
-    """,
-    unsafe_allow_html=True
-)
 
     st.markdown(
         f"""
@@ -316,25 +306,11 @@ with tab3:
     x = np.arange(len(bucket_crash_rate))
     y = bucket_crash_rate.values
 
-    ax.plot(
-        x, y,
-        linestyle="--",
-        color="black",
-        linewidth=1,
-        marker="o",
-        alpha=0.8
-    )
+    ax.plot(x, y, linestyle="--", color="black", linewidth=1, marker="o", alpha=0.8)
 
     for i, val in enumerate(bucket_crash_rate.values):
         if not np.isnan(val):
-            ax.text(
-                i,
-                val,
-                f"{val * 100:.1f}%",
-                ha="center",
-                va="bottom",
-                fontsize=7
-            )
+            ax.text(i, val, f"{val * 100:.1f}%", ha="center", va="bottom", fontsize=7)
 
     ax.set_title("Actual Crash Rate by Predicted Risk Level")
     ax.set_xlabel("Predicted Risk Bucket")
@@ -374,5 +350,3 @@ with tab4:
         - ❌ Not a trading signal by itself
         """
     )
-
-
