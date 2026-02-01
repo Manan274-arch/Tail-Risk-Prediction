@@ -126,7 +126,7 @@ if missing_features:
 # ======================================================
 # Sidebar controls
 # ======================================================
-st.sidebar.header("⚙️ Controls")
+st.sidebar.header("⚙️ Risk Settings")
 
 selected_date = st.sidebar.date_input(
     "Evaluation date",
@@ -135,16 +135,17 @@ selected_date = st.sidebar.date_input(
     max_value=df_live.index.max()
 )
 
-prob_threshold = st.sidebar.slider(
-    "Risk alert level",
-    0.05, 0.50, 0.20, 0.05
-)
-
 crash_dd = st.sidebar.slider(
     "What counts as a crash?",
     0.02, 0.20, 0.05, 0.01,
     help="Crash day is defined as forward-return ≤ −drawdown"
 )
+
+prob_threshold = st.sidebar.slider(
+    "Risk alert level",
+    0.05, 0.50, 0.20, 0.05
+)
+
 
 # ======================================================
 # Inference
@@ -188,9 +189,15 @@ tab1, tab2, tab3, tab4 = st.tabs(
 with tab1:
     colA, colB, colC = st.columns([1, 2, 1])
 
-    elevated = prob_today >= prob_threshold
-    color = "red" if elevated else "green"
-    label = "ELEVATED RISK" if elevated else "LOW RISK"
+    if prob_today >= prob_threshold:
+        color = "#C62828"   # deep red
+        label = "HEIGHTENED RISK"
+    elif prob_today >= 0.75 * prob_threshold:
+        color = "#F9A825"   # amber
+        label = "CAUTION"
+    else:
+        color = "#2E7D32"   # muted green
+        label = "LOW RISK"
 
     colB.markdown(
         f"""
@@ -206,7 +213,14 @@ with tab1:
     )
 
     percentile = (df_train["prob"] < prob_today).mean() * 100
-    colB.caption(f"Higher than {percentile:.0f}% of historical observations")
+    colB.markdown(
+    f"""
+    <p style='text-align:center; font-size:13px; color:#AAAAAA; margin-top:-6px;'>
+        Higher than <b>{percentile:.0f}%</b> of historical observations
+    </p>
+    """,
+    unsafe_allow_html=True
+)
 
     st.markdown(
         f"""
