@@ -73,9 +73,6 @@ def load_data():
             df.index = pd.date_range(start="1990-01-01", periods=len(df), freq="B")
             df.index.name = "Date"
 
-    # --------------------------------------------------
-    # FEATURE ENGINEERING (only if missing)
-    # --------------------------------------------------
     for df in [df_train, df_live]:
 
         if "log_return_1d" not in df.columns:
@@ -139,12 +136,12 @@ selected_date = st.sidebar.date_input(
 )
 
 prob_threshold = st.sidebar.slider(
-    "Probability threshold",
+    "Risk alert level",
     0.05, 0.50, 0.20, 0.05
 )
 
 crash_dd = st.sidebar.slider(
-    "Crash definition (drawdown)",
+    "What counts as a crash?",
     0.02, 0.20, 0.05, 0.01,
     help="Crash day is defined as forward-return ≤ −drawdown"
 )
@@ -182,7 +179,7 @@ avg_noncrash = noncrash_probs.mean()
 # Tabs
 # ======================================================
 tab1, tab2, tab3, tab4 = st.tabs(
-    ["📍 Today’s Risk", "📊 Model Behaviour", "📉 Economic Impact", "ℹ️ Methodology"]
+    ["📍 Today’s Risk", "📊 Model Behaviour", "🎯 Model Relevancy", "ℹ️ Methodology"]
 )
 
 # ======================================================
@@ -207,6 +204,9 @@ with tab1:
         """,
         unsafe_allow_html=True
     )
+
+    percentile = (df_train["prob"] < prob_today).mean() * 100
+    colB.caption(f"Higher than {percentile:.0f}% of historical observations")
 
     st.markdown(
         f"""
@@ -269,7 +269,7 @@ with tab2:
     )
 
 # ======================================================
-# TAB 3 — Economic Impact
+# TAB 3 — Model Relevancy
 # ======================================================
 with tab3:
     st.markdown(
@@ -298,6 +298,29 @@ with tab3:
 
     fig, ax = plt.subplots(figsize=(3.6, 2.6))
     bucket_crash_rate.plot(kind="bar", ax=ax, color="firebrick")
+
+    x = np.arange(len(bucket_crash_rate))
+    y = bucket_crash_rate.values
+
+    ax.plot(
+        x, y,
+        linestyle="--",
+        color="black",
+        linewidth=1,
+        marker="o",
+        alpha=0.8
+    )
+
+    for i, val in enumerate(bucket_crash_rate.values):
+        if not np.isnan(val):
+            ax.text(
+                i,
+                val,
+                f"{val * 100:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=7
+            )
 
     ax.set_title("Actual Crash Rate by Predicted Risk Level")
     ax.set_xlabel("Predicted Risk Bucket")
@@ -328,8 +351,14 @@ with tab4:
         ### Why these diagnostics matter
         - **Distribution separation** checks discriminative ability.
         - **Average risk by outcome** provides a basic sanity check.
-        - **Drawdown by risk bucket** tests economic relevance, not just statistical fit.
+        - **Actual Crash Frequency by risk bucket** tests relevancy of the Tail Risk computed, not just statistical fit.
         - **Live market data** are retrieved dynamically from Yahoo Finance (SPY) and cached for 24 hours to ensure stability and reproducibility.
+
+        ### What this is NOT
+        - ❌ Not a crash date prediction
+        - ❌ Not a price forecast
+        - ❌ Not a trading signal by itself
         """
     )
+
 
