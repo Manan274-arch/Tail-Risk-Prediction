@@ -232,6 +232,12 @@ with tab1:
             """
         )
 
+crash_probs = df_train.loc[df_train["is_crash"] == 1, "prob"]
+noncrash_probs = df_train.loc[df_train["is_crash"] == 0, "prob"]
+
+avg_crash = crash_probs.mean()
+avg_noncrash = noncrash_probs.mean()
+
 # ======================================================
 # TAB 2 — Model Behaviour
 # ======================================================
