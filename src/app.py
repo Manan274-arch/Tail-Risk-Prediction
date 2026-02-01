@@ -191,9 +191,12 @@ with tab1:
     st.html(f"""
     <div style="width:100%; text-align:center;">
 
-        <h3 style="margin:0;">
-            Tail Risk on {sel_ts.date()}
-        </h3>
+        <h2 style="
+        margin:0;
+        font-weight:500;
+    ">
+        Tail Risk on {sel_ts.date()}
+    </h2>
 
         <div style="margin-top:18px; display:inline-block; text-align:center;">
 
