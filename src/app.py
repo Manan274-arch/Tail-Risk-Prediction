@@ -66,30 +66,17 @@ def load_data():
     df_live  = pd.read_csv(BASE_DIR / "tail_risk_live_data.csv")
 
     for df in [df_train, df_live]:
-        if "Date" in df.columns:
-            df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-            df.set_index("Date", inplace=True)
-        else:
-            df.index = pd.date_range(start="1990-01-01", periods=len(df), freq="B")
-            df.index.name = "Date"
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df.set_index("Date", inplace=True)
 
-    for df in [df_train, df_live]:
-        if "log_return_1d" not in df.columns:
-            df["log_return_1d"] = np.log(df["Close"]).diff()
-        if "vol_10" not in df.columns:
-            df["vol_10"] = df["log_return_1d"].rolling(10).std()
-        if "vol_20" not in df.columns:
-            df["vol_20"] = df["log_return_1d"].rolling(20).std()
-        if "vol_60" not in df.columns:
-            df["vol_60"] = df["log_return_1d"].rolling(60).std()
-        if "drawdown_20" not in df.columns:
-            df["drawdown_20"] = df["Close"] / df["Close"].rolling(20).max() - 1.0
-        if "mom_10" not in df.columns:
-            df["mom_10"] = df["Close"].pct_change(10)
-        if "mom_50" not in df.columns:
-            df["mom_50"] = df["Close"].pct_change(50)
-        if "volume_ratio_20" not in df.columns and "Volume" in df.columns:
-            df["volume_ratio_20"] = df["Volume"] / df["Volume"].rolling(20).mean()
+        df["log_return_1d"] = np.log(df["Close"]).diff()
+        df["vol_10"] = df["log_return_1d"].rolling(10).std()
+        df["vol_20"] = df["log_return_1d"].rolling(20).std()
+        df["vol_60"] = df["log_return_1d"].rolling(60).std()
+        df["drawdown_20"] = df["Close"] / df["Close"].rolling(20).max() - 1.0
+        df["mom_10"] = df["Close"].pct_change(10)
+        df["mom_50"] = df["Close"].pct_change(50)
+        df["volume_ratio_20"] = df["Volume"] / df["Volume"].rolling(20).mean()
 
     return df_train.dropna().sort_index(), df_live.dropna().sort_index()
 
@@ -106,14 +93,11 @@ df_train, df_live = load_data()
 # ======================================================
 missing_features = [c for c in features if c not in df_live.columns]
 if missing_features:
-    st.error(
-        "Your CSV is missing feature columns required by `features.pkl`:\n\n"
-        + ", ".join(missing_features[:25])
-    )
+    st.error(f"Missing required features: {missing_features}")
     st.stop()
 
 # ======================================================
-# Sidebar — HUMAN READABLE
+# Sidebar
 # ======================================================
 st.sidebar.header("🧭 Risk Settings")
 
@@ -124,40 +108,31 @@ selected_date = st.sidebar.date_input(
     max_value=df_live.index.max()
 )
 
-crash_dd = st.sidebar.slider(
-    "What do we consider a crash?",
-    0.02, 0.20, 0.05, 0.01,
-    help="A crash means the market falls by this percentage or more within the next 10 trading days"
-)
-st.sidebar.caption(
-    f"This defines a crash as a drop of {crash_dd:.0%} or more over the next 10 trading days."
-)
-
 prob_threshold = st.sidebar.slider(
     "When should I be alerted?",
     0.05, 0.50, 0.20, 0.05,
-    help="Alert me when the model estimates crash risk above this probability"
+    help="Alert when estimated crash probability exceeds this value"
 )
+
 st.sidebar.caption(
-    f"You will see an alert when estimated crash risk exceeds {prob_threshold:.0%}."
+    "Crash definition is fixed at training time. "
+    "This threshold only controls alert sensitivity."
 )
 
 # ======================================================
 # Inference
 # ======================================================
-X_train_all = scaler.transform(df_train[features])
-X_live_all  = scaler.transform(df_live[features])
+X_train = scaler.transform(df_train[features])
+X_live  = scaler.transform(df_live[features])
 
-pred_train = model.predict(X_train_all, verbose=0)
-pred_live  = model.predict(X_live_all, verbose=0)
+df_train["prob"] = model.predict(X_train, verbose=0).ravel()
+df_live["prob"]  = model.predict(X_live, verbose=0).ravel()
 
-df_train["prob"] = pred_train[:, -1] if pred_train.ndim == 2 else pred_train.ravel()
-df_live["prob"]  = pred_live[:, -1]  if pred_live.ndim == 2  else pred_live.ravel()
-
+# Fixed training-time crash labels
 df_train["is_crash"] = df_train["tail_event"].astype(int)
 
 # ======================================================
-# Selected date
+# Selected date handling
 # ======================================================
 sel_ts = pd.to_datetime(selected_date)
 if sel_ts not in df_live.index:
@@ -174,202 +149,118 @@ tab1, tab2, tab3, tab4 = st.tabs(
 )
 
 # ======================================================
-# TAB 1 — Today’s Risk (FINAL, STABLE)
+# TAB 1 — Today’s Risk
 # ======================================================
 with tab1:
 
     if prob_today >= prob_threshold:
-        color = "#C62828"
-        label = "HEIGHTENED RISK"
+        color, label = "#C62828", "HEIGHTENED RISK"
     elif prob_today >= 0.75 * prob_threshold:
-        color = "#F9A825"
-        label = "CAUTION"
+        color, label = "#F9A825", "CAUTION"
     else:
-        color = "#2E7D32"
-        label = "LOW RISK"
+        color, label = "#2E7D32", "LOW RISK"
 
     st.html(f"""
-    <div style="width:100%; text-align:center;">
-
-        <h2 style="
-        margin:0;
-        font-weight:500;
-    ">
-        Tail Risk on {sel_ts.date()}
-    </h2>
-
-        <div style="margin-top:18px; display:inline-block; text-align:center;">
-
-            <div style="
-                color:{color};
-                font-size:56px;
-                font-weight:600;
-                line-height:1.05;
-            ">
-                {prob_today:.2%}
-            </div>
-
-            <div style="
-                color:{color};
-                font-weight:600;
-                margin-top:14px;
-            ">
-                {label}
-            </div>
-
-            <div style="
-                font-size:13px;
-                color:#AAAAAA;
-                margin-top:14px;
-            ">
-                Higher than <b>{percentile:.0f}%</b> of historical observations
-            </div>
-
+    <div style="text-align:center;">
+        <h2>Tail Risk on {sel_ts.date()}</h2>
+        <div style="font-size:56px; color:{color};">{prob_today:.2%}</div>
+        <div style="font-weight:600; color:{color};">{label}</div>
+        <div style="color:#AAA; margin-top:10px;">
+            Higher than {percentile:.0f}% of historical observations
         </div>
     </div>
     """)
 
     st.markdown(
         f"""
-        **Interpretation**  
-        This number represents the model-estimated probability of a **large downside event**
-        occurring within the forecast horizon used during training.
-
-        - Crash definition for diagnostics: **forward-return over the next 10 days ≤ −{crash_dd:.0%}**
-        - Probability threshold (signal line): **{prob_threshold:.0%}**
+        **Interpretation**
+        - Model outputs a **probability**, not a forecast
+        - Crash definition is **fixed at training time**
+        - Alert threshold: **{prob_threshold:.0%}**
         """
     )
-
-    with st.expander("What should I do with this probability?"):
-        st.markdown(
-            """
-            - Treat this as an **early warning indicator**, not a deterministic forecast.
-            - Elevated values suggest **heightened vulnerability**, not certainty.
-            - Typical actions include reducing leverage, tightening stops, or adding hedges.
-            """
-        )
-        
-crash_probs = df_train.loc[df_train["is_crash"] == 1, "prob"]
-noncrash_probs = df_train.loc[df_train["is_crash"] == 0, "prob"]
-
-avg_crash = crash_probs.mean()
-avg_noncrash = noncrash_probs.mean()
 
 # ======================================================
 # TAB 2 — Model Behaviour
 # ======================================================
 with tab2:
-    st.markdown(
-        """
-        These diagnostics test whether the model assigns **systematically higher probabilities**
-        on crash days relative to non-crash days.
-        """
-    )
+
+    crash_probs = df_train[df_train["is_crash"] == 1]["prob"]
+    noncrash_probs = df_train[df_train["is_crash"] == 0]["prob"]
 
     left, right = st.columns(2)
 
     with left:
-        fig1, ax1 = plt.subplots(figsize=(3.6, 2.6))
-        ax1.hist(crash_probs, bins=20, density=True, alpha=0.6, label="Crash days", color="red")
-        ax1.hist(noncrash_probs, bins=20, density=True, alpha=0.6, label="Non-crash days", color="green")
-        ax1.axvline(prob_threshold, linestyle="--", color="black", linewidth=1)
-        ax1.set_title("Crash vs Non-Crash Distribution")
-        ax1.set_xlabel("Predicted Probability")
-        ax1.legend()
-        ax1.grid(alpha=0.2)
-        st.pyplot(fig1)
+        fig, ax = plt.subplots()
+        ax.hist(crash_probs, bins=20, alpha=0.6, label="Crash", color="red", density=True)
+        ax.hist(noncrash_probs, bins=20, alpha=0.6, label="Non-crash", color="green", density=True)
+        ax.axvline(prob_threshold, linestyle="--", color="black")
+        ax.legend()
+        st.pyplot(fig)
 
     with right:
-        fig2, ax2 = plt.subplots(figsize=(3.6, 2.6))
-        ax2.bar(["Crash", "Non-crash"], [avg_crash, avg_noncrash], color=["red", "green"])
-        ax2.set_ylim(0, 1)
-        ax2.set_title("Average Predicted Risk")
-        ax2.grid(axis="y", alpha=0.2)
-        st.pyplot(fig2)
-
-    st.markdown(
-        f"""
-        **Quick read:**  
-        - Mean probability on crash days: **{avg_crash:.3f}**  
-        - Mean probability on non-crash days: **{avg_noncrash:.3f}**
-        """
-    )
+        fig, ax = plt.subplots()
+        ax.bar(["Crash", "Non-crash"], [crash_probs.mean(), noncrash_probs.mean()],
+               color=["red", "green"])
+        st.pyplot(fig)
 
 # ======================================================
 # TAB 3 — Model Relevancy
 # ======================================================
 with tab3:
-    st.markdown(
-        """
-        This plot examines whether **higher predicted risk** corresponds to a **higher realized
-        frequency of tail events**, which is the core probabilistic validity check.
-        """
-    )
-
-    bins = [0.0, 0.2, 0.4, 0.6, 1.0]
-    labels = ["0–0.2", "0.2–0.4", "0.4–0.6", "0.6+"]
 
     df_train["risk_bucket"] = pd.cut(
         df_train["prob"],
-        bins=bins,
-        labels=labels,
-        include_lowest=True
+        bins=[0, 0.2, 0.4, 0.6, 1.0],
+        labels=["0–0.2", "0.2–0.4", "0.4–0.6", "0.6+"]
     )
 
-    bucket_crash_rate = (
-        df_train
-        .groupby("risk_bucket")["is_crash"]
-        .mean()
-        .reindex(labels)
-    )
+    bucket_rate = df_train.groupby("risk_bucket")["is_crash"].mean()
 
-    fig, ax = plt.subplots(figsize=(3.6, 2.6))
-    bucket_crash_rate.plot(kind="bar", ax=ax, color="firebrick")
-
-    x = np.arange(len(bucket_crash_rate))
-    y = bucket_crash_rate.values
-
-    ax.plot(x, y, linestyle="--", color="black", linewidth=1, marker="o", alpha=0.8)
-
-    for i, val in enumerate(bucket_crash_rate.values):
-        if not np.isnan(val):
-            ax.text(i, val, f"{val * 100:.1f}%", ha="center", va="bottom", fontsize=7)
-
-    ax.set_title("Actual Crash Rate by Predicted Risk Level")
-    ax.set_xlabel("Predicted Risk Bucket")
-    ax.set_ylabel("Actual Crash Frequency")
-    ax.set_ylim(0, bucket_crash_rate.max() * 1.3)
-    ax.grid(axis="y", alpha=0.2)
-
-    st.pyplot(fig, use_container_width=False)
-
-    with st.expander("Show bucket values (table)"):
-        st.dataframe(bucket_crash_rate.rename("crash_rate"))
+    fig, ax = plt.subplots()
+    bucket_rate.plot(kind="bar", ax=ax, color="firebrick")
+    st.pyplot(fig)
 
 # ======================================================
 # TAB 4 — Methodology
 # ======================================================
 with tab4:
     st.markdown(
-        f"""
+        """
         ### What this system estimates
         - The model outputs a **probability**, not a price forecast.
-        - This probability represents the likelihood of a **tail event**
-          within the horizon used during training.
+        - This probability represents the likelihood of a **large downside (tail) event**
+          occurring within the forecast horizon used during training.
 
-        ### How “crash” is defined here
-        - A crash corresponds to:
-          **forward-return over the next 10 days ≤ −{crash_dd:.0%}** over the forward window.
+        ### How “crash” is defined
+        - A crash corresponds to a **fixed training-time definition** of a large downside move
+          over a **10-day forward window**.
+        - This definition is **not changed dynamically** to preserve statistical validity
+          and ensure that diagnostics remain meaningful.
+
+        ### What the user controls
+        - Users can adjust the **probability threshold**, which controls:
+            - When alerts are triggered
+            - How conservative or aggressive the warning system is
+        - User controls do **not** alter the model, its predictions, or historical labels.
 
         ### Why these diagnostics matter
-        - **Distribution separation** checks discriminative ability.
-        - **Average risk by outcome** provides a basic sanity check.
-        - **Actual Crash Frequency by risk bucket** tests relevancy of the Tail Risk computed, not just statistical fit.
-        - **Live market data** are retrieved dynamically from Yahoo Finance (SPY) and cached for 24 hours to ensure stability and reproducibility.
+        - **Crash vs non-crash distributions** check whether the model assigns
+          systematically higher probabilities during crash periods.
+        - **Average predicted risk by outcome** provides a basic sanity check.
+        - **Actual crash frequency by risk bucket** tests whether higher predicted
+          risk corresponds to higher realized tail event frequency.
+        - Together, these focus on **probabilistic relevance**, not just statistical fit.
 
         ### What this is NOT
         - ❌ Not a crash date prediction
         - ❌ Not a price forecast
         - ❌ Not a trading signal by itself
+
+        ### Data and reproducibility
+        - Market data are sourced from **Yahoo Finance (SPY)**.
+        - The dashboard updates daily and uses cached data to ensure stability
+          and reproducibility across sessions.
         """
     )
+
