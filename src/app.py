@@ -189,48 +189,54 @@ with tab1:
         color = "#2E7D32"
         label = "LOW RISK"
 
-    colB.markdown(
+    # ---- Header (centered safely) ----
+colB.markdown(
+    f"<h3 style='text-align:center; margin:0;'>Tail Risk on {sel_ts.date()}</h3>",
+    unsafe_allow_html=True
+)
+
+# ---- Big number ----
+colB.markdown(
     f"""
-    <!-- Centered header (fixes anchor/link optical shift) -->
-    <div style="display:flex; justify-content:center;">
-        <h3 style="margin:0;">
-            Tail Risk on {sel_ts.date()}
-        </h3>
-    </div>
+    <h1 style="
+        text-align:center;
+        color:{color};
+        margin-top:16px;
+        margin-bottom:0px;
+        font-weight:600;
+        line-height:1.05;
+    ">
+        {prob_today:.2%}
+    </h1>
+    """,
+    unsafe_allow_html=True
+)
 
-    <!-- Hero metric block (optically balanced) -->
-    <div style="display:flex; justify-content:center; align-items:center; margin-top:14px;">
-        <div>
-            <h1 style="
-                text-align:center;
-                color:{color};
-                margin:0;
-                font-weight:600;
-                line-height:1.05;
-            ">
-                {prob_today:.2%}
-            </h1>
+# ---- Risk label ----
+colB.markdown(
+    f"""
+    <p style="
+        text-align:center;
+        color:{color};
+        font-weight:600;
+        letter-spacing:0.08em;
+        margin-top:12px;
+    ">
+        {label}
+    </p>
+    """,
+    unsafe_allow_html=True
+)
 
-            <p style="
-                text-align:center;
-                color:{color};
-                font-weight:600;
-                letter-spacing:0.08em;
-                margin-top:12px;
-            ">
-                {label}
-            </p>
-        </div>
-    </div>
-
-    <!-- Percentile context -->
-    <p title="Percentile of the model's predicted probabilities across the historical training sample"
-       style="
+# ---- Percentile line ----
+colB.markdown(
+    f"""
+    <p style="
         text-align:center;
         font-size:13px;
         color:#AAAAAA;
         margin-top:10px;
-       ">
+    ">
         Higher than <b>{percentile:.0f}%</b> of historical observations
     </p>
     """,
