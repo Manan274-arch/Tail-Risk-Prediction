@@ -243,7 +243,7 @@ colB.markdown(
     unsafe_allow_html=True
 )
 
-    st.markdown(
+st.markdown(
         f"""
         **Interpretation**  
         This number represents the model-estimated probability of a **large downside event**
