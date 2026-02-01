@@ -217,16 +217,16 @@ with tab1:
     colB.markdown(
         f"""
         <p style="
-            text-align:center;
-            color:{color};
-            font-weight:600;
-            letter-spacing:0.08em;
-            margin-top:12px;
-        ">
-            {label}
-        </p>
-        """,
-        unsafe_allow_html=True
+        text-align:center;
+        color:{color};
+        font-weight:600;
+        font-size:0.9rem;
+        margin-top:12px;
+    ">
+        {label}
+    </p>
+    """,
+    unsafe_allow_html=True
     )
 
     # --- Percentile line ---
